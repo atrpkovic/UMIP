@@ -49,3 +49,23 @@ coverage.xml
 *.egg
 .csv
 *.csv
+
+.env
+venv/
+.venv/
+
+# Cache
+cache/
+__pycache__/
+*.pyc
+
+# Output
+output/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
