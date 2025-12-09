@@ -32,11 +32,13 @@ keywords = sorted(df["KEYWORD"].dropna().unique().tolist())
 default_keyword = st.session_state.get("selected_keyword", keywords[0] if keywords else None)
 default_idx = keywords.index(default_keyword) if default_keyword in keywords else 0
 
-selected_keyword = st.selectbox(
-    "Select keyword",
-    keywords,
-    index=default_idx
-)
+col1, col2 = st.columns([1, 2])
+with col1:
+    selected_keyword = st.selectbox(
+        "Select keyword",
+        keywords,
+        index=default_idx
+    )
 
 if not selected_keyword:
     st.warning("No keyword selected.")
@@ -109,7 +111,11 @@ else:
         p_val = kw_data.get("P_VALUE")
         if pd.notna(p_val):
             significance = "Significant" if p_val < 0.05 else "Not Significant"
-            st.metric("p-value", f"{p_val:.4f}", help=f"Statistical significance: {significance}")
+            if p_val < 0.0001:
+                p_display = "< 0.0001"
+            else:
+                p_display = f"{p_val:.4f}"
+            st.metric("p-value", p_display, help=f"Statistical significance: {significance}")
     
     with col3:
         # Current vs 1 year ago

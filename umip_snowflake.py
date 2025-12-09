@@ -176,7 +176,7 @@ def upload_ahrefs_csv_to_snowflake(csv_path: str):
     upload_df["KEYWORD"] = df["Keyword"]
     upload_df["CURRENT_URL"] = df.get("Current URL", None)
     upload_df["PAGE_PATH"] = df["Current URL"].apply(
-        lambda x: x.replace("https://www.prioritytire.com", "") if pd.notna(x) else None
+        lambda x: x.replace("https://www.prioritytire.com", "").replace("×", "x") if pd.notna(x) else None
     ) if "Current URL" in df.columns else None
     upload_df["VOLUME"] = df.get("Volume", 0)
     upload_df["CURRENT_POSITION"] = df.get("Current position", None)
