@@ -168,16 +168,16 @@ st.divider()
 # GA4 performance (if available)
 st.subheader("Page Performance (GA4)")
 
-sessions = kw_data.get("SESSIONS")
-revenue = kw_data.get("REVENUE")
-key_event_rate = kw_data.get("KEY_EVENT_RATE") or kw_data.get("USER_KEY_EVENT_RATE")
+total_users = kw_data.get("TOTAL_USERS")
+revenue = kw_data.get("TOTAL_REVENUE")
+key_event_rate = kw_data.get("USER_KEY_EVENT_RATE")
 page_path = kw_data.get("PAGE_PATH") or kw_data.get("CURRENT_URL")
 
-if pd.notna(sessions) or pd.notna(revenue):
+if pd.notna(total_users) or pd.notna(revenue):
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Sessions", format_number(sessions) if pd.notna(sessions) else "-")
+        st.metric("Users", format_number(total_users) if pd.notna(total_users) else "-")
     
     with col2:
         if pd.notna(revenue):
