@@ -96,7 +96,7 @@ else:
         trend_data,
         x="TREND_DATE",
         y="INTEREST",
-        use_container_width=True
+        width="stretch"
     )
     
     # Trend stats
@@ -145,7 +145,7 @@ if all(pd.notna(x) for x in [q1, q2, q3, q4]):
         seasonality_df,
         x="Quarter",
         y="Avg Interest",
-        use_container_width=True
+        width="stretch"
     )
     
     # Seasonality insight

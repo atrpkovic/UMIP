@@ -1,25 +1,26 @@
 """
 UMIP - Universal Marketing Intelligence Platform
-Opportunity Finder for PPC Team
+Seasonal Opportunity Finder for PPC Team
 """
 import streamlit as st
 import pandas as pd
 from utils import (
     load_keyword_analysis, 
-    calculate_opportunity_score,
+    calculate_seasonality_score,
+    get_months_until_peak,
     get_trend_emoji,
     format_number
 )
 
 # Page config
 st.set_page_config(
-    page_title="UMIP - Opportunities",
+    page_title="UMIP - Seasonal Priorities",
     page_icon="chart_with_upwards_trend",
     layout="wide"
 )
 
-st.title("UMIP Opportunity Finder")
-st.caption("Find rising keywords to bid on before competitors catch on")
+st.title("UMIP Seasonal Priority Finder")
+st.caption("Find keywords peaking soon to bid on before competitors catch on")
 
 # Load data
 with st.spinner("Loading keyword data..."):
@@ -29,14 +30,28 @@ if df.empty:
     st.error("No data found. Make sure KEYWORD_ANALYSIS view is populated.")
     st.stop()
 
+# Calculate seasonality scores and urgency for all rows
+df["SEASONAL_PRIORITY"] = df.apply(calculate_seasonality_score, axis=1)
+df["MONTHS_UNTIL_PEAK"], df["URGENCY"] = zip(*df["PEAK_MONTH"].apply(get_months_until_peak))
+
 # Sidebar filters
 st.sidebar.header("Filters")
 
 # Keyword search
-keyword_search = st.sidebar.text_input(
-    "Search keywords", 
-    placeholder="e.g. winter tires",
-    help="Filter keywords containing this text"
+keyword_list = [""] + sorted(df["KEYWORD"].dropna().unique().tolist())
+keyword_search = st.sidebar.selectbox(
+    "Search keywords",
+    keyword_list,
+    index=0,
+    help="Select a keyword or type to filter"
+)
+
+# Urgency filter
+urgency_options = ["All", "Act Now", "Coming Soon", "Plan Ahead"]
+urgency_filter = st.sidebar.selectbox(
+    "Urgency",
+    urgency_options,
+    help="Act Now = peaks within 2 months, Coming Soon = 3-4 months, Plan Ahead = 5+ months"
 )
 
 # Trend filter
@@ -58,34 +73,7 @@ min_volume = st.sidebar.number_input(
 )
 
 st.sidebar.divider()
-
-# Score weights in expander to reduce clutter
-with st.sidebar.expander("Score Weights", expanded=False):
-    st.caption("Adjust how factors contribute to opportunity score")
-    
-    w_trend = st.slider(
-        "Trend momentum", 0.0, 1.0, 0.5, 0.1,
-        help="How much rising trends affect the score"
-    )
-    w_volume = st.slider(
-        "Search volume", 0.0, 1.0, 0.3, 0.1,
-        help="How much search volume affects the score"
-    )
-    w_competition = st.slider(
-        "Low competition", 0.0, 1.0, 0.2, 0.1,
-        help="How much low keyword difficulty affects the score"
-    )
-
-# Normalize weights
-total_weight = w_trend + w_volume + w_competition
-if total_weight > 0:
-    weights = {
-        "trend": w_trend / total_weight,
-        "volume": w_volume / total_weight,
-        "competition": w_competition / total_weight
-    }
-else:
-    weights = {"trend": 0.33, "volume": 0.33, "competition": 0.34}
+st.sidebar.caption("**Score weights:** Amplitude 30%, Time to Peak 40%, Consistency 20%, Trend 10%")
 
 # Apply filters
 filtered_df = df.copy()
@@ -95,22 +83,20 @@ if keyword_search:
         filtered_df["KEYWORD"].str.contains(keyword_search, case=False, na=False)
     ]
 
+if urgency_filter != "All":
+    filtered_df = filtered_df[filtered_df["URGENCY"] == urgency_filter]
+
 if trend_filter != "All":
     if trend_filter == "No Data":
-        filtered_df = filtered_df[filtered_df["TREND_CLASSIFICATION"].isna()]
+        filtered_df = filtered_df[filtered_df["TREND_CLASSIFICATION"].isna() | (filtered_df["TREND_CLASSIFICATION"] == "No Data")]
     else:
         filtered_df = filtered_df[filtered_df["TREND_CLASSIFICATION"] == trend_filter]
 
 if "SEARCH_VOLUME" in filtered_df.columns:
     filtered_df = filtered_df[filtered_df["SEARCH_VOLUME"] >= min_volume]
 
-# Calculate opportunity scores
-filtered_df["OPPORTUNITY_SCORE"] = filtered_df.apply(
-    lambda row: calculate_opportunity_score(row, weights), axis=1
-)
-
-# Sort by opportunity score
-filtered_df = filtered_df.sort_values("OPPORTUNITY_SCORE", ascending=False)
+# Sort by seasonal priority
+filtered_df = filtered_df.sort_values("SEASONAL_PRIORITY", ascending=False)
 
 # Display metrics
 col1, col2, col3, col4 = st.columns(4)
@@ -121,22 +107,22 @@ with col1:
         help="Total keywords matching your filters"
     )
 with col2:
-    growth_count = len(filtered_df[filtered_df["TREND_CLASSIFICATION"] == "Growth"])
+    act_now_count = len(filtered_df[filtered_df["URGENCY"] == "Act Now"])
     st.metric(
-        "Growing Trends", 
-        growth_count,
-        help="Keywords with statistically significant upward trends"
+        "Act Now", 
+        act_now_count,
+        help="Keywords peaking within 2 months"
     )
 with col3:
     if len(filtered_df) > 0:
-        avg_score = filtered_df["OPPORTUNITY_SCORE"].mean()
+        avg_score = filtered_df["SEASONAL_PRIORITY"].mean()
         st.metric(
-            "Avg Opportunity Score", 
+            "Avg Priority Score", 
             f"{avg_score:.1f}",
-            help="Average score across filtered keywords (0-100)"
+            help="Average seasonal priority score (0-100)"
         )
     else:
-        st.metric("Avg Opportunity Score", "-")
+        st.metric("Avg Priority Score", "-")
 with col4:
     if len(filtered_df) > 0 and "SEARCH_VOLUME" in filtered_df.columns:
         total_vol = filtered_df["SEARCH_VOLUME"].sum()
@@ -155,8 +141,8 @@ if len(filtered_df) == 0:
     st.warning("No keywords match your filters.")
 else:
     # Prepare display columns
-    display_cols = ["KEYWORD", "OPPORTUNITY_SCORE", "TREND_CLASSIFICATION", "ANNUAL_GROWTH", 
-                    "SEARCH_VOLUME", "KD", "PEAK_QUARTER"]
+    display_cols = ["KEYWORD", "SEASONAL_PRIORITY", "URGENCY", "PEAK_MONTH", "MONTHS_UNTIL_PEAK",
+                    "TREND_CLASSIFICATION", "SEARCH_VOLUME", "PEAK_CONSISTENCY"]
     
     # Filter to available columns
     display_cols = [c for c in display_cols if c in filtered_df.columns]
@@ -166,19 +152,20 @@ else:
     # Rename for display
     column_renames = {
         "KEYWORD": "Keyword",
-        "OPPORTUNITY_SCORE": "Score",
+        "SEASONAL_PRIORITY": "Priority",
+        "URGENCY": "Urgency",
+        "PEAK_MONTH": "Peak Month",
+        "MONTHS_UNTIL_PEAK": "Months Away",
         "TREND_CLASSIFICATION": "Trend",
-        "ANNUAL_GROWTH": "Annual Growth",
         "SEARCH_VOLUME": "Volume",
-        "KD": "Difficulty",
-        "PEAK_QUARTER": "Peak Quarter"
+        "PEAK_CONSISTENCY": "Consistency"
     }
     display_df = display_df.rename(columns=column_renames)
     
-    # Format annual growth with sign
-    if "Annual Growth" in display_df.columns:
-        display_df["Annual Growth"] = display_df["Annual Growth"].apply(
-            lambda x: f"+{x:.1f}" if pd.notna(x) and x > 0 else (f"{x:.1f}" if pd.notna(x) else "-")
+    # Format consistency as percentage
+    if "Consistency" in display_df.columns:
+        display_df["Consistency"] = display_df["Consistency"].apply(
+            lambda x: f"{x:.0%}" if pd.notna(x) else "-"
         )
     
     # Add trend indicator
@@ -187,20 +174,20 @@ else:
             lambda x: f"{get_trend_emoji(x)} {x}" if pd.notna(x) else "~ No Data"
         )
     
-    # Store selected keyword in session state for detail page
-    st.subheader(f"Top Opportunities ({len(display_df)} keywords)")
+    st.subheader(f"Seasonal Priorities ({len(display_df)} keywords)")
     
+    # Use dataframe with selection
     # Use dataframe with selection
     event = st.dataframe(
         display_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
         column_config={
-            "Score": st.column_config.ProgressColumn(
-                "Score",
-                help="Opportunity score based on trend, volume, and competition (0-100)",
+            "Priority": st.column_config.ProgressColumn(
+                "Priority",
+                help="Seasonal priority score based on amplitude, timing, consistency, and trend (0-100)",
                 min_value=0,
                 max_value=100,
                 format="%.0f"
@@ -209,54 +196,31 @@ else:
                 "Keyword",
                 help="The search term"
             ),
+            "Urgency": st.column_config.TextColumn(
+                "Urgency",
+                help="Act Now = peaks within 2 months, Coming Soon = 3-4 months, Plan Ahead = 5+ months"
+            ),
+            "Peak Month": st.column_config.TextColumn(
+                "Peak Month",
+                help="Month with highest average search interest"
+            ),
+            "Months Away": st.column_config.NumberColumn(
+                "Months Away",
+                help="Months until peak season",
+                format="%d"
+            ),
             "Trend": st.column_config.TextColumn(
                 "Trend",
-                help="Growth = rising searches, Decline = falling, ~ = no clear trend"
-            ),
-            "Annual Growth": st.column_config.TextColumn(
-                "Annual Growth",
-                help="Estimated yearly change in Google Trends interest points"
+                help="Long-term trend direction over 5 years"
             ),
             "Volume": st.column_config.NumberColumn(
                 "Volume",
                 help="Monthly search volume from Ahrefs",
                 format="%d"
             ),
-            "Difficulty": st.column_config.NumberColumn(
-                "Difficulty",
-                help="Keyword Difficulty (0-100) - lower is easier to rank",
-                format="%d"
-            ),
-            "Peak Quarter": st.column_config.TextColumn(
-                "Peak Quarter",
-                help="Quarter with highest search interest (Q1=Jan-Mar, Q2=Apr-Jun, etc.)"
+            "Consistency": st.column_config.TextColumn(
+                "Consistency",
+                help="How often this keyword peaks in the same month year-over-year"
             )
         }
-    )
-    
-    # Handle row selection
-    if event.selection and event.selection.rows:
-        selected_idx = event.selection.rows[0]
-        selected_keyword = filtered_df.iloc[selected_idx]["KEYWORD"]
-        st.session_state["selected_keyword"] = selected_keyword
-        st.info(f"Selected: **{selected_keyword}** - Go to Keyword Detail page for deep dive")
-    
-    st.divider()
-    
-    # Export section
-    st.subheader("Export")
-    
-    export_df = filtered_df.copy()
-    if "OPPORTUNITY_SCORE" in export_df.columns:
-        # Reorder with score first
-        cols = ["KEYWORD", "OPPORTUNITY_SCORE"] + [c for c in export_df.columns if c not in ["KEYWORD", "OPPORTUNITY_SCORE"]]
-        export_df = export_df[cols]
-    
-    csv = export_df.to_csv(index=False)
-    st.download_button(
-        label="Download CSV for Google Ads",
-        data=csv,
-        file_name="umip_opportunities.csv",
-        mime="text/csv",
-        help="Export filtered keywords with all metrics"
     )

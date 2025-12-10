@@ -130,3 +130,112 @@ def format_number(val):
         return f"{val/1_000:.1f}K"
     else:
         return str(int(val))
+    
+def calculate_seasonality_score(row, current_month=None):
+    """
+    Calculate Seasonal Priority score based on:
+    - Amplitude (30%): How much interest swings between peak and trough
+    - Time to peak (40%): Urgency - peaks soon = higher score
+    - Peak consistency (20%): How predictable is the pattern
+    - Trend direction (10%): Bonus for growth, penalty for decline
+    
+    Returns score 0-100.
+    """
+    import datetime
+    
+    if current_month is None:
+        current_month = datetime.datetime.now().month
+    
+    amplitude_score = 0
+    time_score = 0
+    consistency_score = 0
+    trend_score = 0.5  # neutral default
+    
+    # --- Amplitude (30%) ---
+    # Get monthly averages to find peak and trough
+    month_cols = ['JAN_AVG', 'FEB_AVG', 'MAR_AVG', 'APR_AVG', 'MAY_AVG', 'JUN_AVG',
+                  'JUL_AVG', 'AUG_AVG', 'SEP_AVG', 'OCT_AVG', 'NOV_AVG', 'DEC_AVG']
+    
+    monthly_vals = []
+    for col in month_cols:
+        val = row.get(col)
+        if pd.notna(val) and val > 0:
+            monthly_vals.append(val)
+    
+    if len(monthly_vals) >= 2:
+        peak_val = max(monthly_vals)
+        trough_val = min(monthly_vals)
+        if trough_val > 0:
+            amplitude = (peak_val - trough_val) / trough_val
+            # Normalize: 0x = 0, 5x+ = 1
+            amplitude_score = min(amplitude / 5, 1)
+    
+    # --- Time to peak (40%) ---
+    peak_month_str = row.get("PEAK_MONTH")
+    if pd.notna(peak_month_str):
+        month_map = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+                     'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+        peak_month = month_map.get(peak_month_str, 0)
+        
+        if peak_month > 0:
+            # Months until peak (circular)
+            months_until = (peak_month - current_month) % 12
+            if months_until == 0:
+                months_until = 12  # Peak is this month, treat as 12 months away for next cycle
+            
+            # Closer = higher score: 1 month away = 1.0, 12 months away = 0.08
+            time_score = (12 - months_until + 1) / 12
+    
+    # --- Peak consistency (20%) ---
+    consistency = row.get("PEAK_CONSISTENCY")
+    if pd.notna(consistency):
+        consistency_score = consistency  # Already 0-1
+    
+    # --- Trend direction (10%) ---
+    trend = row.get("TREND_CLASSIFICATION")
+    if trend == "Growth":
+        trend_score = 1.0
+    elif trend == "Decline":
+        trend_score = 0.0
+    else:
+        trend_score = 0.5
+    
+    # Weighted combination
+    score = (
+        0.30 * amplitude_score +
+        0.40 * time_score +
+        0.20 * consistency_score +
+        0.10 * trend_score
+    ) * 100
+    
+    return round(score, 1)
+
+def get_months_until_peak(peak_month_str, current_month=None):
+    """Returns months until peak and urgency label."""
+    import datetime
+    
+    if current_month is None:
+        current_month = datetime.datetime.now().month
+    
+    if pd.isna(peak_month_str):
+        return None, None
+    
+    month_map = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+                 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+    peak_month = month_map.get(peak_month_str, 0)
+    
+    if peak_month == 0:
+        return None, None
+    
+    months_until = (peak_month - current_month) % 12
+    if months_until == 0:
+        months_until = 12
+    
+    if months_until <= 2:
+        urgency = "Act Now"
+    elif months_until <= 4:
+        urgency = "Coming Soon"
+    else:
+        urgency = "Plan Ahead"
+    
+    return months_until, urgency
